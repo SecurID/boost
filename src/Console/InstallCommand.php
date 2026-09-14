@@ -15,6 +15,7 @@ use Laravel\Boost\Contracts\SupportsSkills;
 use Laravel\Boost\Install\Agents\Agent;
 use Laravel\Boost\Install\AgentsDetector;
 use Laravel\Boost\Install\Cloud;
+use Laravel\Boost\Install\GitignoreWriter;
 use Laravel\Boost\Install\GuidelineComposer;
 use Laravel\Boost\Install\GuidelineConfig;
 use Laravel\Boost\Install\GuidelineWriter;
@@ -490,6 +491,30 @@ class InstallCommand extends Command
                 ? fn () => grid($skills->map(fn (Skill $skill): string => $skill->displayName())->sort()->values()->toArray())
                 : null,
         );
+
+        $this->ignoreAgentSkillPaths($skillsAgents);
+    }
+
+    /**
+     * Ignore each agent's skill directory in .gitignore.
+     *
+     * Skills are the single committed source of truth in `.ai/skills`; the agent
+     * directories are regenerated (as symlinks, or copies on unsupported platforms)
+     * on every install, so they should stay out of version control.
+     *
+     * @param  Collection<int, SupportsSkills&Agent>  $skillsAgents
+     */
+    protected function ignoreAgentSkillPaths(Collection $skillsAgents): void
+    {
+        $paths = $skillsAgents
+            ->map(fn (SupportsSkills&Agent $agent): string => $agent->skillsPath())
+            ->all();
+
+        $added = (new GitignoreWriter(base_path()))->ignore($paths);
+
+        if ($added !== []) {
+            $this->info(sprintf('Ignored %d generated agent skill %s in .gitignore', count($added), Str::plural('directory', count($added))));
+        }
     }
 
     protected function buildGuidelineConfig(): GuidelineConfig

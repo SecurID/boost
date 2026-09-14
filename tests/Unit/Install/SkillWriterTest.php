@@ -59,9 +59,10 @@ it('writes skill to a target directory', function (): void {
         ->and($absoluteTarget.'/test-skill')->toBeDirectory()
         ->and($absoluteTarget.'/test-skill/SKILL.md')->toBeFile()
         ->and($absoluteTarget.'/test-skill/references/example.md')->toBeFile()
-        ->and($canonicalSkillPath)->not->toBeDirectory();
+        ->and($canonicalSkillPath)->toBeDirectory();
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory($canonicalSkillPath);
 });
 
 it('updates existing canonical skills when installing non-custom skills', function (): void {
@@ -210,6 +211,7 @@ it('returns UPDATED when skill directory already exists', function (): void {
     expect($content)->toContain('name: test-skill');
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/test-skill'));
 });
 
 it('returns FAILED when source directory does not exist', function (): void {
@@ -252,6 +254,8 @@ it('writes all skills', function (): void {
         ->and($results['skill-two'])->toBe(SkillWriter::SUCCESS);
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/skill-one'));
+    cleanupSkillDirectory(base_path('.ai/skills/skill-two'));
 });
 
 it('copies nested directory structure', function (): void {
@@ -278,6 +282,7 @@ it('copies nested directory structure', function (): void {
         ->and($absoluteTarget.'/nested-skill/references/deep/nested/file.md')->toBeFile();
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/nested-skill'));
 });
 
 it('throws an exception for path traversal in skill name', function (string $maliciousName): void {
@@ -333,6 +338,7 @@ it('renders blade templates to markdown', function (): void {
         ->not->toContain('{{ 1 + 1 }}');
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/blade-skill'));
 });
 
 it('preserves vue template syntax in verbatim blocks when rendering blade skills', function (): void {
@@ -365,6 +371,7 @@ it('preserves vue template syntax in verbatim blocks when rendering blade skills
         ->not->toContain('@{{ errors.email }}');
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/vue-syntax-skill'));
 });
 
 it('removes a skill directory', function (): void {
@@ -490,6 +497,7 @@ it('syncs skills by writing new and removing stale', function (): void {
         ->and($staleSkillDir)->not->toBeDirectory();
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/new-skill'));
 });
 
 it('sync preserves skills that exist in both source and target', function (): void {
@@ -518,6 +526,7 @@ it('sync preserves skills that exist in both source and target', function (): vo
     expect($content)->toContain('name: test-skill');
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/existing-skill'));
 });
 
 it('sync preserves user-created custom skills that were never tracked', function (): void {
@@ -550,6 +559,7 @@ it('sync preserves user-created custom skills that were never tracked', function
     expect($customContent)->toBe('custom content');
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/new-skill'));
 });
 
 it('sync only removes previously tracked skills', function (): void {
@@ -583,6 +593,7 @@ it('sync only removes previously tracked skills', function (): void {
         ->and($untrackedDir)->toBeDirectory();
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/tracked-one'));
 });
 
 it('removes directory containing nested symlinks', function (): void {
@@ -702,7 +713,7 @@ it('handles dangling symlink at target path', function (): void {
     cleanupSkillDirectory($canonicalSkillPath);
 });
 
-it('transitions from non-custom directory to custom symlink', function (): void {
+it('materializes non-custom skills to the canonical directory and links them', function (): void {
     $sourceDir = fixture('skills/test-skill');
     $relativeTarget = '.boost-test-skills-'.uniqid();
     $absoluteTarget = base_path($relativeTarget);
@@ -721,24 +732,15 @@ it('transitions from non-custom directory to custom symlink', function (): void 
     );
 
     $writer = new SkillWriter($agent);
-    $writer->write($nonCustomSkill);
+    $result = $writer->write($nonCustomSkill);
 
-    expect($targetPath)->toBeDirectory()
-        ->and(is_link($targetPath))->toBeFalse();
-
-    $customSkill = new Skill(
-        name: $skillName,
-        package: 'boost',
-        path: $sourceDir,
-        description: 'Test skill',
-        custom: true,
-    );
-
-    $result = $writer->write($customSkill);
-
-    expect($result)->toBe(SkillWriter::UPDATED)
+    // Non-custom skills now follow the same render-to-.ai + link strategy as custom skills:
+    // the canonical copy is always created, and the agent path points at it.
+    expect($result)->toBe(SkillWriter::SUCCESS)
         ->and($canonicalSkillPath)->toBeDirectory()
-        ->and($canonicalSkillPath.'/SKILL.md')->toBeFile();
+        ->and($canonicalSkillPath.'/SKILL.md')->toBeFile()
+        ->and($targetPath)->toBeDirectory()
+        ->and($targetPath.'/SKILL.md')->toBeFile();
 
     if (is_link($targetPath)) {
         expect(realpath($targetPath))->toBe(realpath($canonicalSkillPath));
@@ -750,7 +752,7 @@ it('transitions from non-custom directory to custom symlink', function (): void 
     cleanupSkillDirectory($canonicalSkillPath);
 });
 
-it('transitions from custom symlink to non-custom directory', function (): void {
+it('re-writing a skill is idempotent and keeps the canonical copy intact', function (): void {
     $sourceDir = fixture('skills/test-skill');
     $relativeTarget = '.boost-test-skills-'.uniqid();
     $absoluteTarget = base_path($relativeTarget);
@@ -761,32 +763,28 @@ it('transitions from custom symlink to non-custom directory', function (): void 
     $agent = Mockery::mock(SupportsSkills::class);
     $agent->shouldReceive('skillsPath')->andReturn($relativeTarget);
 
-    $customSkill = new Skill(
+    $skill = new Skill(
         name: $skillName,
         package: 'boost',
         path: $sourceDir,
         description: 'Test skill',
-        custom: true,
     );
 
     $writer = new SkillWriter($agent);
-    $writer->write($customSkill);
+    $writer->write($skill);
 
-    $wasSymlink = is_link($targetPath);
-
-    $nonCustomSkill = new Skill(
-        name: $skillName,
-        package: 'boost',
-        path: $sourceDir,
-        description: 'Test skill',
-    );
-
-    $result = $writer->write($nonCustomSkill);
+    // A second write over an existing target reports UPDATED and leaves a working link.
+    $result = $writer->write($skill);
 
     expect($result)->toBe(SkillWriter::UPDATED)
+        ->and($canonicalSkillPath)->toBeDirectory()
+        ->and($canonicalSkillPath.'/SKILL.md')->toBeFile()
         ->and($targetPath)->toBeDirectory()
-        ->and(is_link($targetPath))->toBeFalse()
         ->and($targetPath.'/SKILL.md')->toBeFile();
+
+    if (is_link($targetPath)) {
+        expect(realpath($targetPath))->toBe(realpath($canonicalSkillPath));
+    }
 
     cleanupSkillDirectory($absoluteTarget);
     cleanupSkillDirectory($canonicalSkillPath);
@@ -996,6 +994,7 @@ it('removes extra files when updating skill directory', function (): void {
         ->and($targetSkill.'/references/old')->not->toBeDirectory();
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/test-skill'));
 });
 
 it('computes correct relative path when target is outside project directory', function (): void {
@@ -1091,4 +1090,5 @@ it('writes skill files with a trailing newline', function (): void {
         ->and(file_get_contents($absoluteTarget.'/test-skill/SKILL.md'))->toEndWith("\n");
 
     cleanupSkillDirectory($absoluteTarget);
+    cleanupSkillDirectory(base_path('.ai/skills/test-skill'));
 });

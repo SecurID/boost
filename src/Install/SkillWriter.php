@@ -39,31 +39,10 @@ class SkillWriter
         $canonicalPath = base_path('.ai'.DIRECTORY_SEPARATOR.'skills'.DIRECTORY_SEPARATOR.$skill->name);
         $existed = $this->pathExists($targetPath);
 
-        if (! $skill->custom) {
-            return $this->writeNonCustomSkill($skill, $targetPath, $canonicalPath, $existed);
-        }
-
-        return $this->writeCustomSkill($skill, $targetPath, $canonicalPath, $existed);
-    }
-
-    protected function writeNonCustomSkill(Skill $skill, string $targetPath, string $canonicalPath, bool $existed): int
-    {
-        $canonicalExists = $this->pathExists($canonicalPath);
-        $needsCanonicalUpdate = $canonicalExists && ! $this->pathsMatch($skill->path, $canonicalPath);
-
-        if ($needsCanonicalUpdate && ! $this->copyDirectory($skill->path, $canonicalPath)) {
-            return self::FAILED;
-        }
-
-        if (! $this->copyDirectory($skill->path, $targetPath)) {
-            return self::FAILED;
-        }
-
-        return $existed ? self::UPDATED : self::SUCCESS;
-    }
-
-    protected function writeCustomSkill(Skill $skill, string $targetPath, string $canonicalPath, bool $existed): int
-    {
+        // Every skill — Boost, third-party, or custom — is materialized once in the
+        // canonical `.ai/skills` directory (rendering Blade to Markdown along the way).
+        // Skip the copy when the skill's source already *is* the canonical directory,
+        // e.g. a custom skill the user hand-authored there.
         if (! $this->pathsMatch($skill->path, $canonicalPath) && ! $this->copyDirectory($skill->path, $canonicalPath)) {
             return self::FAILED;
         }
@@ -72,6 +51,9 @@ class SkillWriter
             return self::FAILED;
         }
 
+        // Raw Blade templates only survive in the canonical directory when a user
+        // hand-authored them there; render them into the target instead of symlinking
+        // so the agent always reads compiled Markdown.
         if ($this->directoryContainsBladeFiles($canonicalPath)) {
             if (! $this->copyDirectory($canonicalPath, $targetPath)) {
                 return self::FAILED;
@@ -80,7 +62,9 @@ class SkillWriter
             return $existed ? self::UPDATED : self::SUCCESS;
         }
 
-        if (! $this->createSymlink($canonicalPath, $targetPath) && ! $this->copyDirectory($skill->path, $targetPath)) {
+        // Point the agent's skill directory at the canonical copy via a relative symlink,
+        // falling back to a plain copy on platforms without symlink support (e.g. Windows).
+        if (! $this->createSymlink($canonicalPath, $targetPath) && ! $this->copyDirectory($canonicalPath, $targetPath)) {
             return self::FAILED;
         }
 
