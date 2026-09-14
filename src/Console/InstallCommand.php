@@ -496,11 +496,7 @@ class InstallCommand extends Command
     }
 
     /**
-     * Ignore each agent's skill directory in .gitignore.
-     *
-     * Skills are the single committed source of truth in `.ai/skills`; the agent
-     * directories are regenerated (as symlinks, or copies on unsupported platforms)
-     * on every install, so they should stay out of version control.
+     * Ignore each agent's generated skill directory, keeping .ai/skills as the source of truth.
      *
      * @param  Collection<int, SupportsSkills&Agent>  $skillsAgents
      */

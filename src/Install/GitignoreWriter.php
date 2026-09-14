@@ -16,10 +16,6 @@ class GitignoreWriter
     /**
      * Ensure the given project-relative directories are ignored by git.
      *
-     * Entries are anchored to the repository root and added only once. Paths that
-     * resolve outside the project (e.g. "../skills") are skipped, since they cannot
-     * be expressed as a repo-root .gitignore rule.
-     *
      * @param  array<int, string>  $paths
      * @return array<int, string> The entries that were newly added.
      */

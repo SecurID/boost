@@ -734,8 +734,7 @@ it('materializes non-custom skills to the canonical directory and links them', f
     $writer = new SkillWriter($agent);
     $result = $writer->write($nonCustomSkill);
 
-    // Non-custom skills now follow the same render-to-.ai + link strategy as custom skills:
-    // the canonical copy is always created, and the agent path points at it.
+    // Non-custom skills now use the same render-to-.ai + link strategy as custom skills.
     expect($result)->toBe(SkillWriter::SUCCESS)
         ->and($canonicalSkillPath)->toBeDirectory()
         ->and($canonicalSkillPath.'/SKILL.md')->toBeFile()

@@ -39,10 +39,7 @@ class SkillWriter
         $canonicalPath = base_path('.ai'.DIRECTORY_SEPARATOR.'skills'.DIRECTORY_SEPARATOR.$skill->name);
         $existed = $this->pathExists($targetPath);
 
-        // Every skill — Boost, third-party, or custom — is materialized once in the
-        // canonical `.ai/skills` directory (rendering Blade to Markdown along the way).
-        // Skip the copy when the skill's source already *is* the canonical directory,
-        // e.g. a custom skill the user hand-authored there.
+        // Materialize the skill once in .ai/skills, rendering Blade to Markdown.
         if (! $this->pathsMatch($skill->path, $canonicalPath) && ! $this->copyDirectory($skill->path, $canonicalPath)) {
             return self::FAILED;
         }
@@ -51,9 +48,7 @@ class SkillWriter
             return self::FAILED;
         }
 
-        // Raw Blade templates only survive in the canonical directory when a user
-        // hand-authored them there; render them into the target instead of symlinking
-        // so the agent always reads compiled Markdown.
+        // Hand-authored raw Blade in the canonical directory must be rendered, not symlinked.
         if ($this->directoryContainsBladeFiles($canonicalPath)) {
             if (! $this->copyDirectory($canonicalPath, $targetPath)) {
                 return self::FAILED;
@@ -62,8 +57,7 @@ class SkillWriter
             return $existed ? self::UPDATED : self::SUCCESS;
         }
 
-        // Point the agent's skill directory at the canonical copy via a relative symlink,
-        // falling back to a plain copy on platforms without symlink support (e.g. Windows).
+        // Symlink the agent directory to the canonical copy, copying as a fallback (e.g. Windows).
         if (! $this->createSymlink($canonicalPath, $targetPath) && ! $this->copyDirectory($canonicalPath, $targetPath)) {
             return self::FAILED;
         }
